@@ -32,7 +32,7 @@ A lightweight macOS menu bar application that monitors common development server
 
 ### From Release (Recommended)
 
-1. Download the latest `macport` binary from the [Releases](https://github.com/yourusername/Macport/releases) page
+1. Download the latest `macport` binary from the [Releases](https://github.com/gupsammy/Macport/releases) page
 2. Move it to your preferred location (e.g., `/Applications/macport` or `/usr/local/bin/macport`)
 3. Make it executable: `chmod +x /Applications/macport`
 4. Run: `macport` or create an alias in your shell config
@@ -41,7 +41,7 @@ A lightweight macOS menu bar application that monitors common development server
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Macport.git
+git clone https://github.com/gupsammy/Macport.git
 cd macport
 
 # Build in release mode
@@ -132,7 +132,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 
 Contributions are welcome! Here are some ways you can help:
 
-- Report bugs and request features via [Issues](https://github.com/yourusername/Macport/issues)
+- Report bugs and request features via [Issues](https://github.com/gupsammy/Macport/issues)
 - Submit pull requests for bug fixes or new features
 - Improve documentation
 - Share your experience and spread the word
