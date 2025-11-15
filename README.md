@@ -31,29 +31,32 @@ A lightweight macOS menu bar application that monitors common development server
 
 ## Installation
 
-### Quick Install (Recommended)
+### One-Line Install (Recommended)
 
 ```bash
-# Download and extract
-curl -L https://github.com/gupsammy/Macport/releases/latest/download/macport-v1.1.0-macos.tar.gz | tar xz
-
-# Navigate to extracted folder
-cd macport-v1.1.0-macos
-
-# Run the installer (will prompt for sudo password)
-./install.sh
-
-# Launch the app
-macport
+curl -fsSL https://raw.githubusercontent.com/gupsammy/Macport/master/install.sh | bash
 ```
 
-The app will appear in your macOS menu bar.
+The installer will:
+- Download the latest release from GitHub
+- Install to `/usr/local/bin/macport`
+- Set up permissions and handle macOS security
+- Verify the installation
 
-### macOS Security Note
+After installation, simply run `macport` to launch the app in your menu bar.
 
-If macOS shows a security warning saying the app "cannot be verified", the installation script automatically handles this. For manual installations, run:
+### Alternative: Install Specific Version
+
+To install and inspect the script first:
 ```bash
-sudo xattr -dr com.apple.quarantine /usr/local/bin/macport
+# Download the installer
+curl -fsSL https://raw.githubusercontent.com/gupsammy/Macport/master/install.sh > install.sh
+
+# Review it
+less install.sh
+
+# Run it
+bash install.sh
 ```
 
 ### From Source
