@@ -62,8 +62,6 @@ User config stored at `~/.macport.json` (auto-created on first run):
 }
 ```
 
-**Legacy config format** (flat structure) is automatically migrated to new format on first run.
-
 Edit via menu: **Edit Configuration** opens in default text editor.
 
 ## Architecture

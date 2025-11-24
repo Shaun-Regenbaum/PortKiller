@@ -153,44 +153,6 @@ impl Default for SystemConfig {
     }
 }
 
-// Legacy config format for backward compatibility
-#[derive(Deserialize)]
-struct LegacyConfig {
-    port_ranges: Vec<(u16, u16)>,
-    #[serde(default = "default_inactive_color")]
-    inactive_color: (u8, u8, u8),
-    #[serde(default = "default_active_color")]
-    active_color: (u8, u8, u8),
-    #[serde(default = "default_notifications_enabled")]
-    notifications_enabled: bool,
-}
-
-impl From<LegacyConfig> for Config {
-    fn from(legacy: LegacyConfig) -> Self {
-        Self {
-            monitoring: MonitoringConfig {
-                poll_interval_secs: default_poll_interval_secs(),
-                port_ranges: legacy.port_ranges,
-                show_project_names: default_show_project_names(),
-            },
-            integrations: IntegrationsConfig {
-                brew_enabled: default_brew_enabled(),
-                docker_enabled: default_docker_enabled(),
-            },
-            ui: UiConfig {
-                inactive_color: legacy.inactive_color,
-                active_color: legacy.active_color,
-            },
-            notifications: NotificationsConfig {
-                enabled: legacy.notifications_enabled,
-            },
-            system: SystemConfig {
-                launch_at_login: default_launch_at_login(),
-            },
-        }
-    }
-}
-
 pub fn get_config_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home).join(".macport.json")
@@ -201,24 +163,7 @@ pub fn load_or_create_config() -> Result<Config> {
 
     if path.exists() {
         let content = fs::read_to_string(&path).context("failed to read config file")?;
-
-        // Try parsing as new format first
-        if let Ok(config) = serde_json::from_str::<Config>(&content) {
-            return Ok(config);
-        }
-
-        // Fall back to legacy format and migrate
-        if let Ok(legacy) = serde_json::from_str::<LegacyConfig>(&content) {
-            let config = Config::from(legacy);
-            // Save migrated config in new format
-            save_config(&config)?;
-            return Ok(config);
-        }
-
-        // If both fail, return parse error
-        Err(anyhow::anyhow!(
-            "failed to parse config file in either new or legacy format"
-        ))
+        serde_json::from_str::<Config>(&content).context("failed to parse config file")
     } else {
         let config = Config::default();
         save_config(&config)?;
