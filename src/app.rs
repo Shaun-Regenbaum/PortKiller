@@ -157,11 +157,11 @@ pub fn run() -> Result<()> {
                     }
 
                     // Verify actual system state and sync config
-                    if let Ok(actual_state) = is_launch_at_login_enabled() {
-                        if actual_state != state.config.system.launch_at_login {
-                            state.config.system.launch_at_login = actual_state;
-                            let _ = save_config(&state.config);
-                        }
+                    if let Ok(actual_state) = is_launch_at_login_enabled()
+                        && actual_state != state.config.system.launch_at_login
+                    {
+                        state.config.system.launch_at_login = actual_state;
+                        let _ = save_config(&state.config);
                     }
 
                     sync_menu_with_context(&tray_icon, &state);

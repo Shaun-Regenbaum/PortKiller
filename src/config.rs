@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Config {
     #[serde(default)]
     pub monitoring: MonitoringConfig,
@@ -149,18 +149,6 @@ impl Default for SystemConfig {
     fn default() -> Self {
         Self {
             launch_at_login: default_launch_at_login(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            monitoring: MonitoringConfig::default(),
-            integrations: IntegrationsConfig::default(),
-            ui: UiConfig::default(),
-            notifications: NotificationsConfig::default(),
-            system: SystemConfig::default(),
         }
     }
 }
