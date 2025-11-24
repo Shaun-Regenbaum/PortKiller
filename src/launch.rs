@@ -85,7 +85,9 @@ mod smapp {
     pub fn is_enabled() -> Result<bool> {
         let app_service = AppService::new(ServiceType::MainApp);
         let status = app_service.status();
-        Ok(status == ServiceStatus::Enabled)
+        // Both Enabled and RequiresApproval mean the app is registered for launch-at-login
+        // RequiresApproval just needs user to approve it in System Settings
+        Ok(status == ServiceStatus::Enabled || status == ServiceStatus::RequiresApproval)
     }
 }
 

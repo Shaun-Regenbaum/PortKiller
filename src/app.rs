@@ -124,29 +124,53 @@ pub fn run() -> Result<()> {
 
                     match result {
                         Ok(()) => {
-                            // Update config to match new state
-                            state.config.system.launch_at_login = !currently_enabled;
-                            if let Err(e) = save_config(&state.config) {
-                                state.last_feedback = Some(KillFeedback::error(format!(
-                                    "Failed to save config: {}",
-                                    e
-                                )));
-                            } else {
-                                state.last_feedback =
-                                    Some(KillFeedback::info(if !currently_enabled {
-                                        "Launch at login enabled".to_string()
+                            // Verify actual system state and update config based on reality
+                            match is_launch_at_login_enabled() {
+                                Ok(actual_state) => {
+                                    state.config.system.launch_at_login = actual_state;
+                                    if let Err(e) = save_config(&state.config) {
+                                        state.last_feedback = Some(KillFeedback::error(format!(
+                                            "Failed to save config: {}",
+                                            e
+                                        )));
                                     } else {
-                                        "Launch at login disabled".to_string()
-                                    }));
+                                        state.last_feedback =
+                                            Some(KillFeedback::info(if actual_state {
+                                                "Launch at login enabled".to_string()
+                                            } else {
+                                                "Launch at login disabled".to_string()
+                                            }));
+                                    }
+                                }
+                                Err(e) => {
+                                    state.last_feedback = Some(KillFeedback::error(format!(
+                                        "Failed to verify launch-at-login state: {}",
+                                        e
+                                    )));
+                                }
                             }
                         }
                         Err(e) => {
                             // Check if it's the "requires approval" case
                             let msg = e.to_string();
                             if msg.contains("approve") || msg.contains("Login Items") {
-                                state.last_feedback = Some(KillFeedback::warning(
-                                    "Please approve in System Settings > Login Items".to_string(),
-                                ));
+                                // Treat as partial success - verify actual state
+                                match is_launch_at_login_enabled() {
+                                    Ok(actual_state) => {
+                                        state.config.system.launch_at_login = actual_state;
+                                        let _ = save_config(&state.config);
+                                        state.last_feedback = Some(KillFeedback::warning(
+                                            "Please approve in System Settings > Login Items"
+                                                .to_string(),
+                                        ));
+                                    }
+                                    Err(_) => {
+                                        state.last_feedback = Some(KillFeedback::warning(
+                                            "Please approve in System Settings > Login Items"
+                                                .to_string(),
+                                        ));
+                                    }
+                                }
                             } else {
                                 state.last_feedback = Some(KillFeedback::error(format!(
                                     "Failed to toggle launch-at-login: {}",
@@ -154,14 +178,6 @@ pub fn run() -> Result<()> {
                                 )));
                             }
                         }
-                    }
-
-                    // Verify actual system state and sync config
-                    if let Ok(actual_state) = is_launch_at_login_enabled()
-                        && actual_state != state.config.system.launch_at_login
-                    {
-                        state.config.system.launch_at_login = actual_state;
-                        let _ = save_config(&state.config);
                     }
 
                     sync_menu_with_context(&tray_icon, &state);
