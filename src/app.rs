@@ -69,6 +69,7 @@ pub fn run() -> Result<()> {
 
     update_tray_display(&tray_icon, &state);
     let mut worker_sender: Option<Sender<WorkerCommand>> = Some(worker_tx);
+    // Initialize to past time to force first integration refresh
     let mut last_integration_refresh = Instant::now() - INTEGRATION_REFRESH_INTERVAL;
 
     #[allow(deprecated)]
@@ -651,9 +652,7 @@ fn is_safe_path(path: &std::path::Path) -> bool {
         Err(_) => return false,
     };
     // Allow paths under home directory
-    if let Ok(home) = std::env::var("HOME")
-        && canonical.starts_with(&home)
-    {
+    if let Ok(home) = std::env::var("HOME") && canonical.starts_with(&home) {
         return true;
     }
     // Allow /tmp and /var/folders (macOS temp)
