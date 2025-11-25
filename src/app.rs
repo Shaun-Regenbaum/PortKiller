@@ -614,6 +614,19 @@ fn refresh_projects_for(state: &mut AppState) {
 }
 
 fn resolve_project_info(pid: i32) -> Option<ProjectInfo> {
+    let path = get_process_cwd(pid)?;
+    // Validate path is in safe location (home dir or /tmp)
+    if !is_safe_path(&path) {
+        log::debug!("Skipping project resolution for unsafe path: {:?}", path);
+        return None;
+    }
+    let name = get_git_repo_name(&path)
+        .or_else(|| dir_name(&path))
+        .unwrap_or_else(|| "(unknown)".to_string());
+    Some(ProjectInfo { name, path })
+}
+
+fn get_process_cwd(pid: i32) -> Option<std::path::PathBuf> {
     let out = Command::new("lsof")
         .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
         .output()
@@ -621,42 +634,52 @@ fn resolve_project_info(pid: i32) -> Option<ProjectInfo> {
     if !out.status.success() {
         return None;
     }
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let mut cwd: Option<String> = None;
-    for line in stdout.lines() {
-        if let Some(rest) = line.strip_prefix('n') {
-            cwd = Some(rest.to_string());
-            break;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix('n'))
+        .map(std::path::PathBuf::from)
+}
+
+fn is_safe_path(path: &std::path::Path) -> bool {
+    // Resolve to canonical path to prevent traversal attacks
+    let canonical = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    // Allow paths under home directory
+    if let Ok(home) = std::env::var("HOME") {
+        if canonical.starts_with(&home) {
+            return true;
         }
     }
-    let cwd = cwd?;
-    let path = std::path::PathBuf::from(cwd.clone());
-    let git = Command::new("git")
-        .args(["-C", &cwd, "rev-parse", "--show-toplevel"])
+    // Allow /tmp and /var/folders (macOS temp)
+    if canonical.starts_with("/tmp") || canonical.starts_with("/var/folders") {
+        return true;
+    }
+    false
+}
+
+fn get_git_repo_name(path: &std::path::Path) -> Option<String> {
+    let out = Command::new("git")
+        .args([
+            "-C",
+            &path.to_string_lossy(),
+            "rev-parse",
+            "--show-toplevel",
+        ])
         .output()
-        .ok();
-    let name = if let Some(gitout) = git {
-        if gitout.status.success() {
-            let root = String::from_utf8_lossy(&gitout.stdout).trim().to_string();
-            std::path::PathBuf::from(root)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| {
-                    path.file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "(unknown)".into())
-                })
-        } else {
-            path.file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "(unknown)".into())
-        }
-    } else {
-        path.file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "(unknown)".into())
-    };
-    Some(ProjectInfo { name, path })
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let root = String::from_utf8_lossy(&out.stdout);
+    std::path::Path::new(root.trim())
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+}
+
+fn dir_name(path: &std::path::Path) -> Option<String> {
+    path.file_name().map(|s| s.to_string_lossy().to_string())
 }
 
 // docker/brew integrations moved to crate::integrations::{docker,brew}
