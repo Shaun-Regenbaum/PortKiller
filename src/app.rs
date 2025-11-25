@@ -93,10 +93,14 @@ pub fn run() -> Result<()> {
             UserEvent::ProcessesUpdated(processes) => {
                 let prev = std::mem::take(&mut state.processes);
                 state.processes = processes;
-                // Refresh integrations less frequently (every 5s) to reduce overhead
-                let integration_refresh_needed =
+                // Detect if ports changed (not just process list) to trigger integration refresh
+                let prev_ports: HashSet<u16> = prev.iter().map(|p| p.port).collect();
+                let curr_ports: HashSet<u16> = state.processes.iter().map(|p| p.port).collect();
+                let ports_changed = prev_ports != curr_ports;
+                // Refresh integrations when ports change OR on timer (to catch external changes)
+                let timer_refresh =
                     last_integration_refresh.elapsed() >= INTEGRATION_REFRESH_INTERVAL;
-                if integration_refresh_needed {
+                if ports_changed || timer_refresh {
                     last_integration_refresh = Instant::now();
                     if state.config.integrations.docker_enabled {
                         state.docker_port_map = query_docker_port_map().unwrap_or_default();
@@ -652,11 +656,18 @@ fn is_safe_path(path: &std::path::Path) -> bool {
         Err(_) => return false,
     };
     // Allow paths under home directory
-    if let Ok(home) = std::env::var("HOME") && canonical.starts_with(&home) {
+    if let Ok(home) = std::env::var("HOME")
+        && canonical.starts_with(&home)
+    {
         return true;
     }
     // Allow /tmp and /var/folders (macOS temp)
-    if canonical.starts_with("/tmp") || canonical.starts_with("/var/folders") {
+    // Note: On macOS, /tmp -> /private/tmp and /var -> /private/var after canonicalization
+    if canonical.starts_with("/tmp")
+        || canonical.starts_with("/private/tmp")
+        || canonical.starts_with("/var/folders")
+        || canonical.starts_with("/private/var/folders")
+    {
         return true;
     }
     false
