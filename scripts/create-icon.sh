@@ -65,8 +65,8 @@ else
 fi
 
 if [ -n "$BASE_ICON" ]; then
-    # Generate all sizes from the custom icon using sips and optimize
-    # Note: Skipping 512x512@2x (1024x1024) - not needed for menu bar apps
+    # Generate minimal icon sizes for menu bar app (max 256x256)
+    # Menu bar apps don't need 512x512 - they're rarely shown in dock/finder
     sips -z 16 16 "${BASE_ICON}" --out "${ICON_DIR}/icon_16x16.png" > /dev/null 2>&1
     sips -z 32 32 "${BASE_ICON}" --out "${ICON_DIR}/icon_16x16@2x.png" > /dev/null 2>&1
     sips -z 32 32 "${BASE_ICON}" --out "${ICON_DIR}/icon_32x32.png" > /dev/null 2>&1
@@ -74,9 +74,7 @@ if [ -n "$BASE_ICON" ]; then
     sips -z 128 128 "${BASE_ICON}" --out "${ICON_DIR}/icon_128x128.png" > /dev/null 2>&1
     sips -z 256 256 "${BASE_ICON}" --out "${ICON_DIR}/icon_128x128@2x.png" > /dev/null 2>&1
     sips -z 256 256 "${BASE_ICON}" --out "${ICON_DIR}/icon_256x256.png" > /dev/null 2>&1
-    sips -z 512 512 "${BASE_ICON}" --out "${ICON_DIR}/icon_256x256@2x.png" > /dev/null 2>&1
-    sips -z 512 512 "${BASE_ICON}" --out "${ICON_DIR}/icon_512x512.png" > /dev/null 2>&1
-    echo "  ✓ Generated optimized icon sizes (max 512x512 for menu bar app)"
+    echo "  ✓ Generated optimized icon sizes (max 256x256 for menu bar app)"
 
     # Optimize all generated PNGs with aggressive compression
     if command -v pngquant &> /dev/null; then
@@ -101,7 +99,7 @@ if [ -n "$BASE_ICON" ]; then
     fi
 else
     echo "⚠ No custom icon found, generating default..."
-    # Note: Skipping 512x512@2x (1024x1024) - not needed for menu bar apps
+    # Generate minimal sizes for menu bar app (max 256x256)
     create_icon 16 "${ICON_DIR}/icon_16x16.png"
     create_icon 32 "${ICON_DIR}/icon_16x16@2x.png"
     create_icon 32 "${ICON_DIR}/icon_32x32.png"
@@ -109,8 +107,6 @@ else
     create_icon 128 "${ICON_DIR}/icon_128x128.png"
     create_icon 256 "${ICON_DIR}/icon_128x128@2x.png"
     create_icon 256 "${ICON_DIR}/icon_256x256.png"
-    create_icon 512 "${ICON_DIR}/icon_256x256@2x.png"
-    create_icon 512 "${ICON_DIR}/icon_512x512.png"
 fi
 
 # Convert iconset to .icns

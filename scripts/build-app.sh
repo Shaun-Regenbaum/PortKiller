@@ -33,10 +33,14 @@ if [ -f "assets/AppIcon.icns" ]; then
     echo "🎨 Copying app icon..."
     cp "assets/AppIcon.icns" "${APP_DIR}/Contents/Resources/"
 fi
-# Also copy PNG version for notifications (terminal-notifier needs PNG)
+# Create downscaled PNG for notifications (128x128 is plenty for notification icons)
 if [ -f "assets/app-logo-color.png" ]; then
-    echo "🎨 Copying notification icon (PNG)..."
-    cp "assets/app-logo-color.png" "${APP_DIR}/Contents/Resources/AppIcon.png"
+    echo "🎨 Creating notification icon (128x128 PNG)..."
+    sips -z 128 128 "assets/app-logo-color.png" --out "${APP_DIR}/Contents/Resources/AppIcon.png" > /dev/null 2>&1
+    # Optimize if tools available
+    if command -v pngquant &> /dev/null; then
+        pngquant --quality=80-90 --force "${APP_DIR}/Contents/Resources/AppIcon.png" --output "${APP_DIR}/Contents/Resources/AppIcon.png" 2>/dev/null || true
+    fi
 fi
 
 # Step 4: Create Info.plist
