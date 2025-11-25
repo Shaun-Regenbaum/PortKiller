@@ -4,24 +4,13 @@ macOS menu bar app for monitoring and killing processes on development ports. Bu
 
 ## Tech Stack
 
-**Language:** Rust 2024 edition
-**Package Manager:** Cargo
-**Key Dependencies:** tray-icon, winit, nix, crossbeam-channel, anyhow
+Rust 2024 edition, Cargo. Key deps: tray-icon, winit, nix, crossbeam-channel, anyhow, smappservice-rs (launch-at-login).
 
 ## Build Optimizations
 
-The release build uses aggressive size optimizations configured in `Cargo.toml`:
-- **opt-level = "z"**: Optimize for binary size (instead of speed)
-- **lto = true**: Link-Time Optimization for cross-crate inlining
-- **codegen-units = 1**: Single compilation unit for maximum optimization
-- **strip = true**: Remove debug symbols from binary
-- **panic = "abort"**: Simpler panic handling without unwinding
-
-Icon optimization (in `scripts/create-icon.sh`):
-- Maximum resolution: 512x512 (no 1024x1024 variant)
-- PNG compression: pngquant (quality 80-90) + optipng (level 7)
-
-**Final sizes:** Binary 1.1 MB, Icon 512 KB, DMG 1.1 MB (61% reduction from unoptimized)
+Release profile in `Cargo.toml`: opt-level "z", LTO, single codegen-unit, strip symbols, panic=abort.
+Icon optimization via `scripts/create-icon.sh`: max 512x512, pngquant + optipng compression.
+Final sizes: Binary ~1.1 MB, Icon ~512 KB, DMG ~1.1 MB.
 
 ## Development Commands
 
@@ -41,146 +30,70 @@ cargo check            # Quick compile check
 ./scripts/install-hooks.sh
 ```
 
-## Helper Scripts
+## Scripts
 
-The `scripts/` directory contains utilities for development and testing:
-
-- **install-hooks.sh**: Installs git pre-commit hook for automatic code formatting
-- **start-test-ports.sh**: Spawns test processes on various ports for development testing
-- **test-notifications.sh**: Tests macOS notification functionality
+`scripts/` contains build and test utilities:
+- `build-app.sh`, `create-dmg.sh`, `release.sh` — Build and packaging
+- `create-icon.sh`, `create-menubar-icon.sh` — Icon generation
+- `install-hooks.sh` — Git pre-commit hook for auto-formatting
+- `start-test-ports.sh`, `test-notifications.sh` — Development testing
 
 ## Configuration
 
-User config stored at `~/.portkiller.json` (auto-created on first run):
-
-```json
-{
-  "monitoring": {
-    "poll_interval_secs": 2,
-    "port_ranges": [[3000, 3010], [5432, 5432], ...],
-    "show_project_names": true
-  },
-  "integrations": {
-    "brew_enabled": true,
-    "docker_enabled": true
-  },
-  "notifications": {
-    "enabled": true
-  },
-  "system": {
-    "launch_at_login": false
-  }
-}
-```
-
-Edit via menu: **Edit Configuration** opens in default text editor.
+User config at `~/.portkiller.json` (auto-created). Edit via menu "Edit Configuration".
+Sections: `monitoring` (poll_interval_secs, port_ranges, show_project_names), `integrations` (brew_enabled, docker_enabled), `notifications` (enabled), `system` (launch_at_login).
 
 ## Architecture
 
-### Module Organization
-Domain-driven modular architecture with clear separation of concerns:
-
+### Module Structure
 ```
 src/
-├── main.rs              # Entry point
-├── lib.rs               # Module exports
-├── app.rs               # Application orchestration, event loop
-├── config.rs            # Configuration management (~/.portkiller.json)
-├── model.rs             # Core data structures (AppState, ProcessInfo)
-├── notify.rs            # macOS notification integration
+├── main.rs, lib.rs      # Entry point and module exports
+├── app.rs               # Event loop orchestration, thread management
+├── config.rs            # Configuration (~/.portkiller.json)
+├── model.rs             # AppState, ProcessInfo data structures
+├── notify.rs            # macOS notifications
+├── launch.rs            # Launch-at-login (SMAppService on macOS 13+, LaunchAgent fallback)
 ├── process/
 │   ├── ports.rs         # Port scanning via lsof
-│   └── kill.rs          # Process termination logic
+│   └── kill.rs          # SIGTERM → 2s → SIGKILL → 1s termination
 ├── ui/
-│   ├── icon.rs          # Tray icon rendering
-│   └── menu.rs          # Menu construction and updates
+│   ├── icon.rs          # Template tray icon
+│   └── menu.rs          # Dynamic menu construction
 └── integrations/
-    ├── docker.rs        # Docker container detection
+    ├── docker.rs        # Container name → port mapping
     └── brew.rs          # Homebrew service detection
 ```
 
 ### Threading Model
-Four concurrent threads communicate via channels and event loop proxy:
-
-1. **Main Loop** (winit): UI events, tray updates, state orchestration
-2. **Monitor Thread**: Polls ports every 2s via `process/ports.rs`, detects Docker/Brew services
-3. **Menu Listener**: Converts menu clicks to actions
-4. **Kill Worker**: Executes termination via `process/kill.rs`
-
-### Core Responsibilities
-
-**app.rs**: Event loop orchestration, thread management, state coordination
-**config.rs**: Load/save user preferences, default port ranges
-**model.rs**: `AppState` (processes, Docker/Brew mappings, project cache)
-**process/ports.rs**: Parse `lsof` output, map ports to PIDs
-**process/kill.rs**: Graceful shutdown (SIGTERM → 2s → SIGKILL → 1s)
-**ui/menu.rs**: Dynamic menu with process/Docker/Brew items
-**ui/icon.rs**: Template icon that adapts to menu bar appearance
-**integrations/docker.rs**: Map container names to exposed ports
-**integrations/brew.rs**: Detect and verify Homebrew services on ports
-
-### Menu Actions
-- **Kill [process]**: Terminate specific PID
-- **Kill all**: Terminate all monitored processes
-- **Stop [docker container]**: `docker stop <container>`
-- **Stop [brew service]**: `brew services stop <service>`
-- **Edit Configuration**: Open `~/.portkiller.json`
-- **Quit**: Exit app
+Four threads via channels: Main (winit event loop), Monitor (2s port polling), Menu Listener (click → action), Kill Worker (process termination).
 
 ## Default Port Ranges
 
-```rust
-(3000, 3010)   // Node.js, React, Next.js, Vite
-(3306, 3306)   // MySQL
-(4000, 4010)   // Alternative Node servers
-(5001, 5010)   // Flask, dev servers (5000 excluded - macOS AirPlay)
-(5173, 5173)   // Vite
-(5432, 5432)   // PostgreSQL
-(6379, 6379)   // Redis
-(8000, 8100)   // Django, Python
-(8080, 8090)   // Tomcat, alt HTTP
-(9000, 9010)   // Dev tools
-(27017, 27017) // MongoDB
-```
-
-Note: Port 5000 excluded to avoid conflicts with macOS AirPlay Receiver.
+Defined in `config.rs`: 3000-3010 (Node/React), 3306 (MySQL), 4000-4010 (alt Node), 5001-5010 (Flask, 5000 excluded for AirPlay), 5173 (Vite), 5432 (Postgres), 6379 (Redis), 8000-8100 (Django/Python), 8080-8090 (Tomcat), 9000-9010 (dev tools), 27017 (MongoDB).
 
 ## Key Constants
 
-```rust
-POLL_INTERVAL = 2s           // Monitor frequency
-SIGTERM_GRACE = 2s           // Before SIGKILL
-SIGKILL_GRACE = 1s           // Final grace period
-POLL_STEP = 200ms            // Process check granularity
-MAX_TOOLTIP_ENTRIES = 5      // Max displayed in tooltip
-```
+Poll every 2s, SIGTERM grace 2s, SIGKILL grace 1s, poll step 200ms, max 5 tooltip entries.
 
 ## Common Patterns
 
-### Adding a monitored port range
-Edit `~/.portkiller.json` via menu or directly. Changes require restart. Default ranges defined in `config.rs`.
-
-### Extending integrations
-Add new service detection to `src/integrations/`. Follow pattern: detection function, port mapping, menu integration.
-
-### Debugging
-- **Port detection**: `RUST_LOG=debug cargo run` shows `lsof` parsing
-- **Docker/Brew**: Debug logs show container/service discovery
-- **Process termination**: Logs show SIGTERM/SIGKILL sequence
+Adding ports: Edit `~/.portkiller.json` (restart required). Defaults in `config.rs`.
+New integrations: Add to `src/integrations/`, implement detection + port mapping + menu integration.
+Debugging: `RUST_LOG=debug cargo run` for lsof parsing, Docker/Brew discovery, kill sequence logs.
 
 ## Development Notes
 
-- Pre-commit hook auto-formats code (install via `./scripts/install-hooks.sh`)
 - Menu IDs use prefixes: `process_`, `docker_stop_`, `brew_stop_` for action routing
-- All external identifiers sanitized to prevent injection attacks
-- Icon updates on state changes (not timer-based) for efficiency
+- All external command inputs sanitized to prevent injection
+- Icon updates on state changes (not timer-based)
 - Project cache in `model.rs` prevents repeated git lookups
-- Brew service detection verifies actual port binding (not just service status)
+- Brew detection verifies actual port binding, not just service status
 
 ## Coding Principles
 
-- **Module boundaries**: Keep domain logic isolated (process/, ui/, integrations/)
-- **Error handling**: Use `anyhow::Result` for operations that can fail
-- **Logging**: Use `log::debug!` for diagnostics, `log::error!` for failures
-- **Thread safety**: Communicate via channels, minimize shared state
-- **Platform commands**: Sanitize all inputs to `lsof`, `docker`, `brew`, `osascript`
+- Module boundaries: Keep domain logic isolated (process/, ui/, integrations/)
+- Error handling: `anyhow::Result` for fallible operations
+- Logging: `log::debug!` for diagnostics, `log::error!` for failures
+- Thread safety: Communicate via channels, minimize shared state
+- Security: Sanitize all inputs to `lsof`, `docker`, `brew`, `osascript`
