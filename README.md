@@ -35,17 +35,13 @@ Every developer knows the drill: `lsof -i :3000`, squint at the output, find the
 
 ## Screenshots
 
-<p align="center">
 <img src="screenshots/ui.png" alt="PortKiller Menu UI" width="400">
 <br>
 <em>Menu bar interface showing active processes, Docker containers, and Homebrew services</em>
-</p>
 
-<p align="center">
 <img src="screenshots/notifications.png" alt="Desktop Notifications" width="400">
 <br>
 <em>Desktop notifications when new processes start listening on your ports</em>
-</p>
 
 ## Installation
 
