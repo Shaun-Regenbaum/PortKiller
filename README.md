@@ -48,7 +48,10 @@ Every developer knows the drill: `lsof -i :3000`, squint at the output, find the
 
 1. Download **[PortKiller.dmg](https://github.com/gupsammy/PortKiller/releases/latest/download/PortKiller.dmg)**
 2. Open the DMG and drag PortKiller to Applications
-3. **First launch**: Right-click the app → "Open" → click "Open" (macOS security prompt for non-App Store apps)
+3. **First launch** (macOS security): Run this in Terminal, then open the app:
+   ```bash
+   xattr -cr /Applications/PortKiller.app
+   ```
 4. After that, launch normally from Applications or Spotlight
 
 The app appears in your menu bar — click to see active port listeners.
