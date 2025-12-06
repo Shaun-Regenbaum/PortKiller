@@ -7,8 +7,8 @@
 <h1>PortKiller</h1>
 <p><em>Stop hunting. Start killing.</em><br>
 That rogue process hogging port 3000? Gone in one click.</p>
-<a href="https://github.com/gupsammy/PortKiller/releases/download/v0.1.5/PortKiller.dmg">
-<img src="https://img.shields.io/badge/⬇_Download_v0.1.5-22c55e?style=for-the-badge&logoColor=white" alt="Download v0.1.5">
+<a href="https://github.com/gupsammy/PortKiller/releases/latest/download/PortKiller.dmg">
+<img src="https://img.shields.io/badge/⬇_Download-22c55e?style=for-the-badge&logoColor=white" alt="Download">
 </a>
 &nbsp;
 <img src="https://img.shields.io/badge/macOS_10.15+-555?style=flat-square" alt="Platform">
@@ -32,6 +32,7 @@ Every developer knows the drill: `lsof -i :3000`, squint at the output, find the
 - **Native Menu Bar App** — Lightweight, adapts to light/dark mode, zero resource usage when idle
 - **Pre-configured for Dev Ports** — Monitors Node.js, React, Vite, Django, Flask, PostgreSQL, Redis, MongoDB, and more out of the box
 - **Fully Configurable** — Add or remove port ranges via simple JSON config
+- **Auto-Update Notifications** — Get notified when a new version is available
 
 ## Screenshots
 
@@ -45,16 +46,7 @@ Every developer knows the drill: `lsof -i :3000`, squint at the output, find the
 
 ## Installation
 
-### Homebrew (Recommended)
-
-```bash
-brew tap gupsammy/portkiller
-brew install --cask portkiller
-```
-
-### Download
-
-1. Download **[PortKiller.dmg](https://github.com/gupsammy/PortKiller/releases/download/v0.1.5/PortKiller.dmg)**
+1. Download **[PortKiller.dmg](https://github.com/gupsammy/PortKiller/releases/latest/download/PortKiller.dmg)**
 2. Open the DMG and drag PortKiller to Applications
 3. Launch from Applications or Spotlight
 
@@ -91,20 +83,19 @@ PortKiller creates `~/.portkiller.json` on first run. Edit via the menu bar (Edi
   },
   "system": {
     "launch_at_login": false
+  },
+  "updates": {
+    "check_enabled": true,
+    "check_interval_hours": 24
   }
 }
 ```
 
-Changes require an app restart.
+Changes apply automatically via hot-reload.
 
 ## Uninstall
 
-**Homebrew:**
-```bash
-brew uninstall --cask portkiller
-```
-
-**Manual:** Quit PortKiller, move PortKiller.app from Applications to Trash, optionally `rm ~/.portkiller.json`
+Quit PortKiller, move PortKiller.app from Applications to Trash, optionally `rm ~/.portkiller.json`
 
 ## Platform Support
 

@@ -52,8 +52,9 @@ src/
 ├── app.rs               # Event loop orchestration, thread management
 ├── config.rs            # Configuration (~/.portkiller.json)
 ├── model.rs             # AppState, ProcessInfo data structures
-├── notify.rs            # macOS notifications
-├── launch.rs            # Launch-at-login (SMAppService on macOS 13+, LaunchAgent fallback)
+├── notify.rs            # macOS notifications (terminal-notifier)
+├── launch.rs            # Launch-at-login (SMAppService on macOS 13+)
+├── utils.rs             # Homebrew path resolution, command lookup
 ├── process/
 │   ├── ports.rs         # Port scanning via lsof
 │   └── kill.rs          # SIGTERM → 2s → SIGKILL → 1s termination
@@ -96,4 +97,4 @@ Debugging: `RUST_LOG=debug cargo run` for lsof parsing, Docker/Brew discovery, k
 - Error handling: `anyhow::Result` for fallible operations
 - Logging: `log::debug!` for diagnostics, `log::error!` for failures
 - Thread safety: Communicate via channels, minimize shared state
-- Security: Sanitize all inputs to `lsof`, `docker`, `brew`, `osascript`
+- Security: Sanitize all inputs to external commands (`lsof`, `docker`, `brew`)
