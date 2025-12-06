@@ -15,6 +15,8 @@ pub struct Config {
     pub notifications: NotificationsConfig,
     #[serde(default)]
     pub system: SystemConfig,
+    #[serde(default)]
+    pub updates: UpdateConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -42,6 +44,26 @@ pub struct NotificationsConfig {
 #[serde(default)]
 pub struct SystemConfig {
     pub launch_at_login: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct UpdateConfig {
+    pub check_enabled: bool,
+    pub check_interval_hours: u64,
+    pub last_check_timestamp: Option<i64>,
+    pub dismissed_version: Option<String>,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            check_enabled: true,
+            check_interval_hours: 24,
+            last_check_timestamp: None,
+            dismissed_version: None,
+        }
+    }
 }
 
 impl Default for MonitoringConfig {

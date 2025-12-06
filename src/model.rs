@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use nix::errno::Errno;
 
+use crate::update::UpdateInfo;
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ProcessInfo {
     pub port: u16,
@@ -18,6 +20,7 @@ pub enum UserEvent {
     MonitorError(String),
     ConfigReloaded(crate::config::Config),
     ConfigReloadFailed(String),
+    UpdateCheckResult(Option<UpdateInfo>),
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +34,10 @@ pub enum MenuAction {
     EditConfig,
     ReloadConfig,
     LaunchAtLogin,
+    CheckForUpdates,
+    ToggleAutoUpdate,
+    DownloadUpdate,
+    DismissUpdate,
     Quit,
 }
 
@@ -87,6 +94,7 @@ pub struct AppState {
     pub project_cache: HashMap<i32, ProjectInfo>,
     pub docker_port_map: HashMap<u16, DockerContainerInfo>,
     pub brew_services_map: HashMap<String, String>, // service_name -> status
+    pub available_update: Option<UpdateInfo>,
 }
 
 #[derive(Clone, Copy, Debug)]
