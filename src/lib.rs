@@ -13,6 +13,7 @@ pub mod process {
 pub mod ui {
     pub mod icon;
     pub mod menu;
+    pub mod process_icons;
 }
 pub mod integrations {
     pub mod brew;

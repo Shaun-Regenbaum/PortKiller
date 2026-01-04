@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use tray_icon::menu::{Menu, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{IconMenuItem, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
 use crate::model::{AppState, FeedbackSeverity, KillFeedback, ProcessInfo};
+use crate::ui::process_icons::{
+    get_process_icon, icon_type_for_brew, icon_type_for_docker, icon_type_from_command,
+};
 
 const MAX_TOOLTIP_ENTRIES: usize = 5;
 const MENU_ID_KILL_ALL: &str = "kill_all";
@@ -54,17 +57,6 @@ fn friendly_container_name(raw_name: &str) -> String {
 pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
     let menu = Menu::new();
     let processes = &state.processes;
-
-    // App header with name and version
-    let version = env!("CARGO_PKG_VERSION");
-    let header = MenuItem::with_id(
-        "app_header",
-        format!("PortKiller  v{}", version),
-        false,
-        None,
-    );
-    menu.append(&header)?;
-    menu.append(&PredefinedMenuItem::separator())?;
 
     if processes.is_empty() {
         let item = MenuItem::with_id(MENU_ID_EMPTY, "No dev ports listening", false, None);
@@ -134,11 +126,14 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                     format!("{} · {}", ports_str, command)
                 };
 
-                // Create clickable menu item that kills the process when clicked
-                let process_item = MenuItem::with_id(
+                // Create clickable menu item with process icon
+                let icon_type = icon_type_from_command(command);
+                let icon = get_process_icon(icon_type);
+                let process_item = IconMenuItem::with_id(
                     MenuId::new(process_menu_id(*pid, ports[0])),
                     main_label,
                     true,
+                    icon,
                     None,
                 );
                 menu.append(&process_item)?;
@@ -192,11 +187,14 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                     .join(", ");
                 let main_label = format!("{} · {}", ports_str, friendly);
 
-                // Create clickable menu item that stops the container when clicked
-                let container_item = MenuItem::with_id(
+                // Create clickable menu item with Docker icon
+                let icon_type = icon_type_for_docker();
+                let icon = get_process_icon(icon_type);
+                let container_item = IconMenuItem::with_id(
                     format!("{}{}", MENU_ID_DOCKER_STOP_PREFIX, container_name),
                     main_label,
                     true,
+                    icon,
                     None,
                 );
                 menu.append(&container_item)?;
@@ -248,11 +246,14 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                     .join(", ");
                 let main_label = format!("{} · {}", ports_str, service_name);
 
-                // Create clickable menu item that stops the service when clicked
-                let service_item = MenuItem::with_id(
+                // Create clickable menu item with Brew/service icon
+                let icon_type = icon_type_for_brew(&service_name);
+                let icon = get_process_icon(icon_type);
+                let service_item = IconMenuItem::with_id(
                     format!("{}{}", MENU_ID_BREW_STOP_PREFIX, service_name),
                     main_label,
                     true,
+                    icon,
                     None,
                 );
                 menu.append(&service_item)?;
@@ -268,51 +269,58 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
     }
 
     menu.append(&PredefinedMenuItem::separator())?;
+
+    // Settings submenu
+    let settings_submenu = Submenu::new("Settings", true);
+
     let edit_config_item =
         MenuItem::with_id(MENU_ID_EDIT_CONFIG, "Edit Configuration...", true, None);
-    menu.append(&edit_config_item)?;
+    settings_submenu.append(&edit_config_item)?;
+
     let reload_config_item =
         MenuItem::with_id(MENU_ID_RELOAD_CONFIG, "Reload Configuration", true, None);
-    menu.append(&reload_config_item)?;
+    settings_submenu.append(&reload_config_item)?;
 
-    // Add checkable Launch at Login item
+    settings_submenu.append(&PredefinedMenuItem::separator())?;
+
     let launch_enabled = state.config.system.launch_at_login;
     let launch_item = MenuItem::with_id(
         MENU_ID_LAUNCH_AT_LOGIN,
         if launch_enabled {
-            "✓ Launch at Login"
+            "Launch at Login  ✓"
         } else {
             "Launch at Login"
         },
         true,
         None,
     );
-    menu.append(&launch_item)?;
+    settings_submenu.append(&launch_item)?;
 
-    menu.append(&PredefinedMenuItem::separator())?;
+    settings_submenu.append(&PredefinedMenuItem::separator())?;
 
-    // Update section
     if let Some(ref update) = state.available_update {
         let download_label = format!("Download Update (v{})", update.version);
         let download_item = MenuItem::with_id(MENU_ID_DOWNLOAD_UPDATE, download_label, true, None);
-        menu.append(&download_item)?;
+        settings_submenu.append(&download_item)?;
     }
 
     let check_item = MenuItem::with_id(MENU_ID_CHECK_FOR_UPDATES, "Check for Updates", true, None);
-    menu.append(&check_item)?;
+    settings_submenu.append(&check_item)?;
 
     let auto_check_enabled = state.config.updates.check_enabled;
     let auto_check_item = MenuItem::with_id(
         MENU_ID_TOGGLE_AUTO_UPDATE,
         if auto_check_enabled {
-            "✓ Auto-check for Updates"
+            "Auto-check for Updates  ✓"
         } else {
             "Auto-check for Updates"
         },
         true,
         None,
     );
-    menu.append(&auto_check_item)?;
+    settings_submenu.append(&auto_check_item)?;
+
+    menu.append(&settings_submenu)?;
 
     let quit_item = MenuItem::with_id(MENU_ID_QUIT, "Quit", true, None);
     menu.append(&quit_item)?;
