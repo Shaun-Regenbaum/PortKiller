@@ -21,8 +21,9 @@ use crate::config::{
 use crate::integrations::brew::{query_brew_services_map, run_brew_stop};
 use crate::integrations::docker::{query_docker_port_map, run_docker_stop};
 use crate::knowledge::{
-    load_knowledge_base, record_sighting, save_knowledge_base, spawn_learning_worker,
-    store_result, AnalysisContext, AnalysisRequest, AnalysisResult, ProcessFingerprint,
+    enrich_context, load_knowledge_base, record_sighting, save_knowledge_base,
+    spawn_learning_worker, store_result, AnalysisContext, AnalysisRequest, AnalysisResult,
+    ProcessFingerprint,
 };
 use crate::model::*;
 use crate::notify::{maybe_notify_changes, notify_update_available};
@@ -1130,14 +1131,19 @@ fn queue_processes_for_learning(
             .get(&process.pid)
             .map(|p| p.name.clone());
 
-        // Build analysis context
-        let context = AnalysisContext {
+        // Build analysis context with enhanced info
+        let mut context = AnalysisContext {
             command: process.command.clone(),
             port: Some(process.port),
             project_name: project_name.clone(),
             container_name,
             container_prefix: container_prefix.clone(),
+            pid: Some(process.pid as u32),
+            ..Default::default()
         };
+
+        // Enrich context with system information (executable path, cwd, docker labels, etc.)
+        enrich_context(&mut context);
 
         // Record sighting and check if analysis is needed
         if let Some(ctx) = record_sighting(

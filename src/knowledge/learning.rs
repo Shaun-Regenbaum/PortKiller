@@ -135,9 +135,7 @@ mod tests {
         let ctx = AnalysisContext {
             command: "node".to_string(),
             port: Some(3000),
-            project_name: None,
-            container_name: None,
-            container_prefix: None,
+            ..Default::default()
         };
 
         let result = record_sighting(&mut kb, fp.clone(), ctx, &config);
@@ -154,9 +152,7 @@ mod tests {
         let ctx = AnalysisContext {
             command: "node".to_string(),
             port: Some(3000),
-            project_name: None,
-            container_name: None,
-            container_prefix: None,
+            ..Default::default()
         };
 
         // First sighting
@@ -192,9 +188,7 @@ mod tests {
         let ctx = AnalysisContext {
             command: "node".to_string(),
             port: Some(3000),
-            project_name: None,
-            container_name: None,
-            container_prefix: None,
+            ..Default::default()
         };
 
         let result = record_sighting(&mut kb, fp.clone(), ctx, &config);

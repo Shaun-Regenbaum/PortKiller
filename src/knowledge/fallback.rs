@@ -201,9 +201,9 @@ mod tests {
         let context = AnalysisContext {
             command: "node".to_string(),
             port: Some(3001),
-            project_name: None,
             container_name: Some("dss_app".to_string()),
             container_prefix: Some("dss".to_string()),
+            ..Default::default()
         };
         let result = generate_fallback(&context);
         assert_eq!(result.display_name, "Dss App");
@@ -216,8 +216,7 @@ mod tests {
             command: "node".to_string(),
             port: Some(3000),
             project_name: Some("my-project".to_string()),
-            container_name: None,
-            container_prefix: None,
+            ..Default::default()
         };
         let result = generate_fallback(&context);
         assert!(result.display_name.contains("My Project"));

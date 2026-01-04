@@ -108,17 +108,18 @@ fn build_analysis_prompt(context: &AnalysisContext) -> String {
 
 Return a JSON object with these exact fields:
 {{
-  "display_name": "Human-friendly name for this process (e.g., 'DSS Backend API', 'Vite Dev Server')",
+  "display_name": "Human-friendly name (e.g., 'DSS Backend API', 'macOS Control Center', 'Tailscale VPN Proxy')",
   "description": "Brief description of what this process does (1-2 sentences)",
   "category": "One of: frontend, backend, database, cache, proxy, dev_tool, infrastructure, unknown",
   "group_hint": "Optional group name if this seems related to a stack (e.g., 'DSS Stack'), or null",
   "confidence": 0.0-1.0 representing how confident you are in this analysis
 }}
 
-Focus on identifying:
-- What the service does
-- Whether it's part of a larger application stack
-- The appropriate category
+Use the provided context to determine:
+- For macOS apps (has macOS App Name): Use the official app name
+- For Docker containers: Use compose service name and project to infer the service role
+- For dev servers: Identify the framework/tool from the executable path or command
+- For system services: Identify the official service name
 
 Return ONLY the JSON object, nothing else."#,
         context.to_prompt()
@@ -219,8 +220,7 @@ Hope this helps!"#;
             command: "node".to_string(),
             port: Some(3001),
             project_name: Some("dss".to_string()),
-            container_name: None,
-            container_prefix: None,
+            ..Default::default()
         };
         let prompt = build_analysis_prompt(&context);
         assert!(prompt.contains("node"));

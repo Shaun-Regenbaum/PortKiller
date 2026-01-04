@@ -143,31 +143,110 @@ pub struct PendingEntry {
 }
 
 /// Context passed to ICA for analysis
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AnalysisContext {
+    /// The command/process name
     pub command: String,
+    /// Port the process is listening on
     pub port: Option<u16>,
+    /// Project directory name
     pub project_name: Option<String>,
+    /// Docker container name (if containerized)
     pub container_name: Option<String>,
+    /// Docker container prefix (e.g., "dss" from "dss_app")
     pub container_prefix: Option<String>,
+
+    // === Enhanced context fields ===
+
+    /// Full executable path (e.g., "/Applications/Foo.app/Contents/MacOS/Foo")
+    pub executable_path: Option<String>,
+    /// Working directory of the process
+    pub working_directory: Option<String>,
+    /// Full command line with arguments
+    pub full_command: Option<String>,
+    /// macOS app display name from mdls (e.g., "Control Center")
+    pub macos_app_name: Option<String>,
+    /// macOS app kind from mdls (e.g., "Application")
+    pub macos_app_kind: Option<String>,
+    /// Docker compose service name
+    pub docker_service: Option<String>,
+    /// Docker compose project name
+    pub docker_project: Option<String>,
+    /// Docker image name/description
+    pub docker_image: Option<String>,
+    /// Docker container working directory
+    pub docker_workdir: Option<String>,
+    /// Docker container command
+    pub docker_cmd: Option<String>,
+    /// Process ID (for additional lookups)
+    pub pid: Option<u32>,
 }
 
 impl AnalysisContext {
+    pub fn new(command: &str) -> Self {
+        Self {
+            command: command.to_string(),
+            ..Default::default()
+        }
+    }
+
     pub fn to_prompt(&self) -> String {
         let mut lines = vec![];
         lines.push(format!("Command: {}", self.command));
+
         if let Some(port) = self.port {
             lines.push(format!("Port: {}", port));
+        }
+        if let Some(ref path) = self.executable_path {
+            lines.push(format!("Executable: {}", path));
+        }
+        if let Some(ref full_cmd) = self.full_command {
+            // Truncate very long commands
+            let truncated = if full_cmd.len() > 200 {
+                format!("{}...", &full_cmd[..200])
+            } else {
+                full_cmd.clone()
+            };
+            lines.push(format!("Full command: {}", truncated));
+        }
+        if let Some(ref cwd) = self.working_directory {
+            lines.push(format!("Working directory: {}", cwd));
         }
         if let Some(ref project) = self.project_name {
             lines.push(format!("Project: {}", project));
         }
+
+        // macOS app info
+        if let Some(ref app_name) = self.macos_app_name {
+            lines.push(format!("macOS App Name: {}", app_name));
+        }
+        if let Some(ref app_kind) = self.macos_app_kind {
+            lines.push(format!("macOS App Kind: {}", app_kind));
+        }
+
+        // Docker info
         if let Some(ref container) = self.container_name {
             lines.push(format!("Docker container: {}", container));
+        }
+        if let Some(ref service) = self.docker_service {
+            lines.push(format!("Docker compose service: {}", service));
+        }
+        if let Some(ref project) = self.docker_project {
+            lines.push(format!("Docker compose project: {}", project));
+        }
+        if let Some(ref image) = self.docker_image {
+            lines.push(format!("Docker image: {}", image));
+        }
+        if let Some(ref workdir) = self.docker_workdir {
+            lines.push(format!("Container workdir: {}", workdir));
+        }
+        if let Some(ref cmd) = self.docker_cmd {
+            lines.push(format!("Container command: {}", cmd));
         }
         if let Some(ref prefix) = self.container_prefix {
             lines.push(format!("Container prefix: {}", prefix));
         }
+
         lines.join("\n")
     }
 }
