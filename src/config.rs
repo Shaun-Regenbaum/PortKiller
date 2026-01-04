@@ -17,6 +17,8 @@ pub struct Config {
     pub system: SystemConfig,
     #[serde(default)]
     pub updates: UpdateConfig,
+    #[serde(default)]
+    pub learning: crate::knowledge::LearningConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

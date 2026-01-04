@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use nix::errno::Errno;
 
+use crate::knowledge::{AnalysisResult, KnowledgeBase};
 use crate::update::UpdateInfo;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -21,6 +22,7 @@ pub enum UserEvent {
     ConfigReloaded(crate::config::Config),
     ConfigReloadFailed(String),
     UpdateCheckResult(Option<UpdateInfo>),
+    KnowledgeUpdated(AnalysisResult),
 }
 
 #[derive(Clone, Debug)]
@@ -95,6 +97,7 @@ pub struct AppState {
     pub docker_port_map: HashMap<u16, DockerContainerInfo>,
     pub brew_services_map: HashMap<String, String>, // service_name -> status
     pub available_update: Option<UpdateInfo>,
+    pub knowledge_base: KnowledgeBase,
 }
 
 #[derive(Clone, Copy, Debug)]

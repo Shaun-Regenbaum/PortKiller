@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use tray_icon::menu::{IconMenuItem, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
+use crate::knowledge::{lookup_display_name, KnowledgeBase, ProcessFingerprint};
 use crate::model::{AppState, FeedbackSeverity, KillFeedback, ProcessInfo};
 use crate::ui::process_icons::{
     get_process_icon, icon_type_for_brew, icon_type_for_docker, icon_type_from_command,
@@ -33,6 +34,15 @@ fn parse_container_prefix(name: &str) -> (String, String) {
         // No prefix, use the whole name
         (String::new(), name.to_string())
     }
+}
+
+/// Get display name for a process from knowledge base, or fall back to command
+fn get_process_display_name(command: &str, container_prefix: Option<&str>, kb: &KnowledgeBase) -> Option<String> {
+    let mut fingerprint = ProcessFingerprint::new(command);
+    if let Some(prefix) = container_prefix {
+        fingerprint = fingerprint.with_container_prefix(prefix);
+    }
+    lookup_display_name(kb, &fingerprint)
 }
 
 /// Maps common container names to friendly display names
@@ -123,7 +133,11 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                 // Get project name for this PID
                 let project_name = state.project_cache.get(pid).map(|pi| pi.name.clone());
 
-                // Build main menu label: "ports · command · project"
+                // Try to get display name from knowledge base
+                let display_name = get_process_display_name(command, None, &state.knowledge_base)
+                    .unwrap_or_else(|| command.clone());
+
+                // Build main menu label: "ports · display_name · project"
                 let ports_str = ports
                     .iter()
                     .map(|p| p.to_string())
@@ -131,9 +145,9 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                     .join(", ");
 
                 let main_label = if let Some(ref project) = project_name {
-                    format!("{} · {} · {}", ports_str, command, project)
+                    format!("{} · {} · {}", ports_str, display_name, project)
                 } else {
-                    format!("{} · {}", ports_str, command)
+                    format!("{} · {}", ports_str, display_name)
                 };
 
                 // Create clickable menu item with process icon
@@ -200,13 +214,19 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                 if prefix.is_empty() || containers.len() == 1 {
                     // No prefix or single container - render flat
                     for (container_name, ports) in containers {
-                        let friendly = friendly_container_name(container_name);
+                        // Try knowledge base first, fall back to friendly name
+                        let display_name = get_process_display_name(
+                            container_name,
+                            if prefix.is_empty() { None } else { Some(prefix) },
+                            &state.knowledge_base,
+                        ).unwrap_or_else(|| friendly_container_name(container_name));
+
                         let ports_str = ports
                             .iter()
                             .map(|p| p.to_string())
                             .collect::<Vec<_>>()
                             .join(", ");
-                        let main_label = format!("{} · {}", ports_str, friendly);
+                        let main_label = format!("{} · {}", ports_str, display_name);
 
                         let icon_type = icon_type_for_docker();
                         let icon = get_process_icon(icon_type);
@@ -225,16 +245,22 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
 
                     for (container_name, ports) in containers {
                         let (_prefix, service) = parse_container_prefix(container_name);
-                        let friendly = friendly_container_name(&service);
+                        // Try knowledge base first, fall back to friendly name
+                        let display_name = get_process_display_name(
+                            &service,
+                            Some(prefix),
+                            &state.knowledge_base,
+                        ).unwrap_or_else(|| friendly_container_name(&service));
+
                         let ports_str = ports
                             .iter()
                             .map(|p| p.to_string())
                             .collect::<Vec<_>>()
                             .join(", ");
                         let label = if ports_str.is_empty() {
-                            friendly
+                            display_name
                         } else {
-                            format!("{} · {}", ports_str, friendly)
+                            format!("{} · {}", ports_str, display_name)
                         };
 
                         let icon_type = icon_type_for_docker();

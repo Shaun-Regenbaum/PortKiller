@@ -20,6 +20,10 @@ use crate::config::{
 };
 use crate::integrations::brew::{query_brew_services_map, run_brew_stop};
 use crate::integrations::docker::{query_docker_port_map, run_docker_stop};
+use crate::knowledge::{
+    load_knowledge_base, record_sighting, save_knowledge_base, spawn_learning_worker,
+    store_result, AnalysisContext, AnalysisRequest, AnalysisResult, ProcessFingerprint,
+};
 use crate::model::*;
 use crate::notify::{maybe_notify_changes, notify_update_available};
 use crate::process::kill::terminate_pid;
@@ -57,6 +61,12 @@ pub fn run() -> Result<()> {
     let config = load_or_create_config().context("failed to load configuration")?;
     let shared_config = Arc::new(RwLock::new(config.clone()));
 
+    // Load knowledge base
+    let knowledge_base = load_knowledge_base().unwrap_or_else(|e| {
+        log::warn!("Failed to load knowledge base, using defaults: {}", e);
+        crate::knowledge::KnowledgeBase::default()
+    });
+
     let mut state = AppState {
         processes: Vec::new(),
         last_feedback: None,
@@ -65,6 +75,7 @@ pub fn run() -> Result<()> {
         docker_port_map: HashMap::new(),
         brew_services_map: HashMap::new(),
         available_update: None,
+        knowledge_base,
     };
 
     let event_loop = EventLoop::<UserEvent>::with_user_event()
@@ -73,10 +84,42 @@ pub fn run() -> Result<()> {
     let proxy = event_loop.create_proxy();
     let (worker_tx, worker_rx) = crossbeam_channel::unbounded();
 
+    // Learning worker channels
+    let (learning_tx, learning_rx) = crossbeam_channel::unbounded::<AnalysisRequest>();
+    let (learning_result_tx, learning_result_rx) = crossbeam_channel::unbounded::<AnalysisResult>();
+
     let _monitor_thread = spawn_monitor_thread(proxy.clone(), shared_config.clone());
     let _config_watcher = spawn_config_watcher(proxy.clone(), shared_config.clone());
     let _worker = spawn_worker(worker_rx, proxy.clone());
     let _update_checker = spawn_update_checker(proxy.clone(), shared_config.clone());
+
+    // Spawn learning worker if enabled
+    let learning_config = Arc::new(config.learning.clone());
+    let _learning_worker = if config.learning.enabled {
+        Some(spawn_learning_worker(
+            learning_config,
+            learning_rx,
+            learning_result_tx,
+        ))
+    } else {
+        None
+    };
+
+    // Spawn thread to forward learning results to event loop
+    let _learning_result_forwarder = {
+        let proxy = proxy.clone();
+        thread::spawn(move || {
+            for result in learning_result_rx {
+                if proxy
+                    .send_event(UserEvent::KnowledgeUpdated(result))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+    };
+
     let menu_receiver = MenuEvent::receiver().clone();
 
     let icon =
@@ -95,8 +138,16 @@ pub fn run() -> Result<()> {
 
     update_tray_display(&tray_icon, &state);
     let mut worker_sender: Option<Sender<WorkerCommand>> = Some(worker_tx);
+    let learning_sender: Option<Sender<AnalysisRequest>> = if config.learning.enabled {
+        Some(learning_tx)
+    } else {
+        None
+    };
     // Initialize to past time to force first integration refresh
     let mut last_integration_refresh = Instant::now() - INTEGRATION_REFRESH_INTERVAL;
+    // Track when we last saved the knowledge base
+    let mut last_kb_save = Instant::now();
+    const KB_SAVE_INTERVAL: Duration = Duration::from_secs(60);
     // Clone shared_config for use in event loop (for manual reload)
     let shared_config_for_loop = shared_config.clone();
 
@@ -146,6 +197,13 @@ pub fn run() -> Result<()> {
                 }
                 // Derive project info in best-effort mode
                 refresh_projects_for(&mut state);
+                // Queue processes for learning analysis
+                if let Some(ref sender) = learning_sender {
+                    queue_processes_for_learning(
+                        &mut state,
+                        sender,
+                    );
+                }
                 // Notifications on change (before cache cleanup so stopped ports still have project info)
                 maybe_notify_changes(&state, &prev);
                 // Clean up stale cache entries for terminated processes
@@ -517,8 +575,30 @@ pub fn run() -> Result<()> {
                 sync_menu_with_context(&tray_icon, &state);
                 update_tray_display(&tray_icon, &state);
             }
+            UserEvent::KnowledgeUpdated(result) => {
+                // Store the analysis result in the knowledge base
+                store_result(
+                    &mut state.knowledge_base,
+                    result.fingerprint,
+                    result.response,
+                    result.source,
+                );
+                // Periodically save knowledge base
+                if last_kb_save.elapsed() >= KB_SAVE_INTERVAL {
+                    if let Err(e) = save_knowledge_base(&state.knowledge_base) {
+                        log::warn!("Failed to save knowledge base: {}", e);
+                    }
+                    last_kb_save = Instant::now();
+                }
+                // Refresh menu to show new names
+                sync_menu_with_context(&tray_icon, &state);
+            }
         },
         Event::LoopExiting => {
+            // Save knowledge base on exit
+            if let Err(e) = save_knowledge_base(&state.knowledge_base) {
+                log::warn!("Failed to save knowledge base on exit: {}", e);
+            }
             worker_sender.take();
         }
         _ => {}
@@ -1021,3 +1101,64 @@ fn dir_name(path: &std::path::Path) -> Option<String> {
 // notifications moved to crate::notify
 
 // build_tooltip and create_template_icon moved under ui::{menu,icon}
+
+/// Queue unknown processes for learning analysis
+fn queue_processes_for_learning(
+    state: &mut AppState,
+    sender: &Sender<AnalysisRequest>,
+) {
+    for process in &state.processes {
+        // Build fingerprint for this process
+        let mut fingerprint = ProcessFingerprint::new(&process.command);
+
+        // Check if this is a Docker container
+        let (container_name, container_prefix) =
+            if let Some(container) = state.docker_port_map.get(&process.port) {
+                let prefix = parse_container_prefix(&container.name);
+                (Some(container.name.clone()), prefix)
+            } else {
+                (None, None)
+            };
+
+        if let Some(ref prefix) = container_prefix {
+            fingerprint = fingerprint.with_container_prefix(prefix);
+        }
+
+        // Get project name if available
+        let project_name = state
+            .project_cache
+            .get(&process.pid)
+            .map(|p| p.name.clone());
+
+        // Build analysis context
+        let context = AnalysisContext {
+            command: process.command.clone(),
+            port: Some(process.port),
+            project_name: project_name.clone(),
+            container_name,
+            container_prefix: container_prefix.clone(),
+        };
+
+        // Record sighting and check if analysis is needed
+        if let Some(ctx) = record_sighting(
+            &mut state.knowledge_base,
+            fingerprint.clone(),
+            context,
+            &state.config.learning,
+        ) {
+            // Queue for analysis
+            let request = AnalysisRequest {
+                fingerprint,
+                context: ctx,
+            };
+            if let Err(e) = sender.send(request) {
+                log::warn!("Failed to queue process for learning: {}", e);
+            }
+        }
+    }
+}
+
+/// Parse container prefix from name (e.g., "dss_app" -> Some("dss"))
+fn parse_container_prefix(name: &str) -> Option<String> {
+    name.split_once('_').map(|(prefix, _)| prefix.to_string())
+}

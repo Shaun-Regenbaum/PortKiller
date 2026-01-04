@@ -2,6 +2,7 @@ pub mod app;
 pub use app::run;
 
 pub mod config;
+pub mod knowledge;
 pub mod launch;
 pub mod model;
 pub mod update;
