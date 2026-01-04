@@ -18,6 +18,7 @@ tray-icon = "0.21"
 notify = "8.0"
 winit = "0.30"
 ureq = { version = "2", default-features = false, features = ["tls"] }
+rfd = "0.15"
 
 [profile.release]
 opt-level = "z"        # Optimize for size

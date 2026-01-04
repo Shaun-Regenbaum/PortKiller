@@ -71,17 +71,17 @@ impl Default for MonitoringConfig {
         Self {
             poll_interval_secs: 2,
             port_ranges: vec![
-                (3000, 3010),   // Node.js, React, Next.js, Vite
-                (3306, 3306),   // MySQL
-                (4000, 4010),   // Alternative Node servers
-                (5001, 5010),   // Flask, general dev servers (excluding 5000)
-                (5173, 5173),   // Vite default
-                (5432, 5432),   // PostgreSQL
-                (6379, 6380),   // Redis (6379 default, 6380 for testing)
-                (8000, 8100),   // Django, Python HTTP servers
-                (8080, 8090),   // Tomcat, alternative HTTP
-                (9000, 9010),   // Various dev tools
+                (3000, 3999),   // Node.js, React, Next.js, Vite, Ruby on Rails
+                (4000, 4999),   // Phoenix, various dev servers
+                (5000, 5999),   // Flask, Vite, Python dev servers
+                (6000, 6999),   // Various dev tools
+                (7000, 7999),   // Various dev servers
+                (8000, 8999),   // Django, Tomcat, HTTP dev servers
+                (9000, 9999),   // PHP, various dev tools
+                (10000, 10999), // Common high-port dev servers
                 (27017, 27017), // MongoDB
+                (33060, 33060), // MySQL X Protocol
+                (35000, 45000), // Dynamic/ephemeral dev ports (golink, etc.)
             ],
             show_project_names: true,
         }

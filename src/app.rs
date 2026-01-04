@@ -9,6 +9,7 @@ use crossbeam_channel::{Receiver, Sender};
 use log::{error, warn};
 use nix::errno::Errno;
 use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use tray_icon::menu::MenuEvent;
 use tray_icon::{TrayIcon, TrayIconBuilder};
 use winit::event::{Event, StartCause};
@@ -38,6 +39,19 @@ const UPDATE_CHECK_DELAY: Duration = Duration::from_secs(5);
 const DOWNLOAD_URL: &str =
     "https://github.com/gupsammy/PortKiller/releases/latest/download/PortKiller.dmg";
 // menu constants moved under ui::menu
+
+/// Show a confirmation dialog before killing a process/container
+fn confirm_stop(title: &str, description: &str) -> bool {
+    matches!(
+        MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title(title)
+            .set_description(description)
+            .set_buttons(MessageButtons::OkCancel)
+            .show(),
+        MessageDialogResult::Ok
+    )
+}
 
 pub fn run() -> Result<()> {
     let config = load_or_create_config().context("failed to load configuration")?;
@@ -229,21 +243,26 @@ pub fn run() -> Result<()> {
                 }
                 MenuAction::KillPid { pid, .. } => {
                     if let Some(target) = describe_pid(pid, &state.processes) {
-                        if let Some(sender) = worker_sender.as_ref() {
-                            if let Err(err) = sender.send(WorkerCommand::KillPid(target)) {
+                        // Show confirmation dialog
+                        if confirm_stop("Stop Process?", &format!("Stop {}?", target.label)) {
+                            if let Some(sender) = worker_sender.as_ref() {
+                                if let Err(err) = sender.send(WorkerCommand::KillPid(target)) {
+                                    let feedback = KillFeedback::error(format!(
+                                        "Unable to dispatch kill command: {}",
+                                        err
+                                    ));
+                                    worker_sender = None;
+                                    state.last_feedback = Some(feedback);
+                                    update_tray_display(&tray_icon, &state);
+                                }
+                            } else {
                                 let feedback = KillFeedback::error(format!(
-                                    "Unable to dispatch kill command: {}",
-                                    err
+                                    "Worker unavailable for PID {}.",
+                                    pid
                                 ));
-                                worker_sender = None;
                                 state.last_feedback = Some(feedback);
                                 update_tray_display(&tray_icon, &state);
                             }
-                        } else {
-                            let feedback =
-                                KillFeedback::error(format!("Worker unavailable for PID {}.", pid));
-                            state.last_feedback = Some(feedback);
-                            update_tray_display(&tray_icon, &state);
                         }
                     } else {
                         state.last_feedback = Some(KillFeedback::info(format!(
@@ -254,106 +273,127 @@ pub fn run() -> Result<()> {
                     }
                 }
                 MenuAction::KillAll => {
-                    // Filter to only regular processes (exclude Docker and Brew)
-                    let regular_processes: Vec<ProcessInfo> = state
-                        .processes
-                        .iter()
-                        .filter(|p| {
-                            // Exclude Docker containers
-                            if state.docker_port_map.contains_key(&p.port) {
-                                return false;
-                            }
-                            // Exclude Brew services
-                            if crate::integrations::brew::get_brew_managed_service(
-                                &p.command,
-                                p.port,
-                                &state.brew_services_map,
-                            )
-                            .is_some()
-                            {
-                                return false;
-                            }
-                            true
-                        })
-                        .cloned()
-                        .collect();
+                    // Show confirmation dialog
+                    if confirm_stop("Stop All Processes?", "Stop all running dev processes?") {
+                        // Filter to only regular processes (exclude Docker and Brew)
+                        let regular_processes: Vec<ProcessInfo> = state
+                            .processes
+                            .iter()
+                            .filter(|p| {
+                                // Exclude Docker containers
+                                if state.docker_port_map.contains_key(&p.port) {
+                                    return false;
+                                }
+                                // Exclude Brew services
+                                if crate::integrations::brew::get_brew_managed_service(
+                                    &p.command,
+                                    p.port,
+                                    &state.brew_services_map,
+                                )
+                                .is_some()
+                                {
+                                    return false;
+                                }
+                                true
+                            })
+                            .cloned()
+                            .collect();
 
-                    let targets = collect_targets_for_all(&regular_processes);
-                    if targets.is_empty() {
-                        state.last_feedback = Some(KillFeedback::info(
-                            "No dev port listeners to terminate.".to_string(),
-                        ));
-                        update_tray_display(&tray_icon, &state);
-                    } else if let Some(sender) = worker_sender.as_ref() {
-                        if let Err(err) = sender.send(WorkerCommand::KillAll(targets)) {
-                            let feedback = KillFeedback::error(format!(
-                                "Unable to dispatch kill-all command: {}",
-                                err
+                        let targets = collect_targets_for_all(&regular_processes);
+                        if targets.is_empty() {
+                            state.last_feedback = Some(KillFeedback::info(
+                                "No dev port listeners to terminate.".to_string(),
                             ));
-                            worker_sender = None;
+                            update_tray_display(&tray_icon, &state);
+                        } else if let Some(sender) = worker_sender.as_ref() {
+                            if let Err(err) = sender.send(WorkerCommand::KillAll(targets)) {
+                                let feedback = KillFeedback::error(format!(
+                                    "Unable to dispatch kill-all command: {}",
+                                    err
+                                ));
+                                worker_sender = None;
+                                state.last_feedback = Some(feedback);
+                                update_tray_display(&tray_icon, &state);
+                            }
+                        } else {
+                            let feedback = KillFeedback::error(
+                                "Worker unavailable for batch request.".to_string(),
+                            );
                             state.last_feedback = Some(feedback);
                             update_tray_display(&tray_icon, &state);
                         }
-                    } else {
-                        let feedback = KillFeedback::error(
-                            "Worker unavailable for batch request.".to_string(),
-                        );
-                        state.last_feedback = Some(feedback);
-                        update_tray_display(&tray_icon, &state);
                     }
                 }
                 MenuAction::Quit => {
                     event_loop.exit();
                 }
                 MenuAction::DockerStop { container } => {
-                    if let Some(sender) = worker_sender.as_ref() {
-                        let _ = sender.send(WorkerCommand::DockerStop { container });
+                    // Show confirmation dialog
+                    if confirm_stop(
+                        "Stop Container?",
+                        &format!("Stop Docker container '{}'?", container),
+                    ) {
+                        if let Some(sender) = worker_sender.as_ref() {
+                            let _ = sender.send(WorkerCommand::DockerStop { container });
+                        }
                     }
                 }
                 MenuAction::DockerStopAll => {
-                    if let Some(sender) = worker_sender.as_ref() {
-                        // Collect all unique Docker containers from current processes
-                        let containers: Vec<String> = state
-                            .docker_port_map
-                            .values()
-                            .map(|dc| dc.name.clone())
-                            .collect::<HashSet<_>>()
-                            .into_iter()
-                            .collect();
+                    // Show confirmation dialog
+                    if confirm_stop("Stop All Containers?", "Stop all Docker containers?") {
+                        if let Some(sender) = worker_sender.as_ref() {
+                            // Collect all unique Docker containers from current processes
+                            let containers: Vec<String> = state
+                                .docker_port_map
+                                .values()
+                                .map(|dc| dc.name.clone())
+                                .collect::<HashSet<_>>()
+                                .into_iter()
+                                .collect();
 
-                        for container in containers {
-                            let _ = sender.send(WorkerCommand::DockerStop {
-                                container: container.clone(),
-                            });
+                            for container in containers {
+                                let _ = sender.send(WorkerCommand::DockerStop {
+                                    container: container.clone(),
+                                });
+                            }
                         }
                     }
                 }
                 MenuAction::BrewStop { service } => {
-                    if let Some(sender) = worker_sender.as_ref() {
-                        let _ = sender.send(WorkerCommand::BrewStop { service });
+                    // Show confirmation dialog
+                    if confirm_stop(
+                        "Stop Service?",
+                        &format!("Stop Homebrew service '{}'?", service),
+                    ) {
+                        if let Some(sender) = worker_sender.as_ref() {
+                            let _ = sender.send(WorkerCommand::BrewStop { service });
+                        }
                     }
                 }
                 MenuAction::BrewStopAll => {
-                    if let Some(sender) = worker_sender.as_ref() {
-                        // Collect all unique brew services from current processes
-                        let services: Vec<String> = state
-                            .processes
-                            .iter()
-                            .filter_map(|p| {
-                                crate::integrations::brew::get_brew_managed_service(
-                                    &p.command,
-                                    p.port,
-                                    &state.brew_services_map,
-                                )
-                            })
-                            .collect::<HashSet<_>>()
-                            .into_iter()
-                            .collect();
+                    // Show confirmation dialog
+                    if confirm_stop("Stop All Services?", "Stop all Homebrew services?") {
+                        if let Some(sender) = worker_sender.as_ref() {
+                            // Collect all unique brew services from current processes
+                            let services: Vec<String> = state
+                                .processes
+                                .iter()
+                                .filter_map(|p| {
+                                    crate::integrations::brew::get_brew_managed_service(
+                                        &p.command,
+                                        p.port,
+                                        &state.brew_services_map,
+                                    )
+                                })
+                                .collect::<HashSet<_>>()
+                                .into_iter()
+                                .collect();
 
-                        for service in services {
-                            let _ = sender.send(WorkerCommand::BrewStop {
-                                service: service.clone(),
-                            });
+                            for service in services {
+                                let _ = sender.send(WorkerCommand::BrewStop {
+                                    service: service.clone(),
+                                });
+                            }
                         }
                     }
                 }

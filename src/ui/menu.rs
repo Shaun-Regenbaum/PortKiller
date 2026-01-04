@@ -25,6 +25,16 @@ const MENU_ID_DOCKER_STOP_PREFIX: &str = "docker_stop_";
 const MENU_ID_BREW_STOP_PREFIX: &str = "brew_stop_";
 const MENU_ID_EMPTY: &str = "empty";
 
+/// Extract project prefix from container name (e.g., "dss_app" -> ("dss", "app"))
+fn parse_container_prefix(name: &str) -> (String, String) {
+    if let Some((prefix, rest)) = name.split_once('_') {
+        (prefix.to_string(), rest.to_string())
+    } else {
+        // No prefix, use the whole name
+        (String::new(), name.to_string())
+    }
+}
+
 /// Maps common container names to friendly display names
 fn friendly_container_name(raw_name: &str) -> String {
     // Strip common prefixes
@@ -154,7 +164,7 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
             }
             has_any_section = true;
 
-            // Group by container name
+            // Group by container name, storing (container_name, ports)
             let mut by_container: BTreeMap<String, Vec<u16>> = BTreeMap::new();
             for (process, dc) in &docker_items {
                 by_container
@@ -163,41 +173,84 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                     .push(process.port);
             }
 
+            // Group containers by prefix (e.g., dss_app, dss_postgres -> "dss" group)
+            let mut by_prefix: BTreeMap<String, Vec<(String, Vec<u16>)>> = BTreeMap::new();
+            for (container_name, mut ports) in by_container {
+                ports.sort();
+                let (prefix, _service) = parse_container_prefix(&container_name);
+                by_prefix
+                    .entry(prefix)
+                    .or_default()
+                    .push((container_name, ports));
+            }
+
+            let total_containers: usize = by_prefix.values().map(|v| v.len()).sum();
             let header = MenuItem::with_id(
                 "header_docker",
-                format!("Docker Containers · {}", by_container.len()),
+                format!("Docker · {}", total_containers),
                 false,
                 None,
             );
             menu.append(&header)?;
 
-            // Check if we need Stop All before consuming the map
-            let needs_stop_all = by_container.len() > 1;
+            let needs_stop_all = total_containers > 1;
 
-            // Create clickable menu item for each container
-            for (container_name, mut ports) in by_container {
-                ports.sort();
-                let friendly = friendly_container_name(&container_name);
+            // Render each prefix group
+            for (prefix, containers) in &by_prefix {
+                if prefix.is_empty() || containers.len() == 1 {
+                    // No prefix or single container - render flat
+                    for (container_name, ports) in containers {
+                        let friendly = friendly_container_name(container_name);
+                        let ports_str = ports
+                            .iter()
+                            .map(|p| p.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let main_label = format!("{} · {}", ports_str, friendly);
 
-                // Build label: "ports · container_name"
-                let ports_str = ports
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let main_label = format!("{} · {}", ports_str, friendly);
+                        let icon_type = icon_type_for_docker();
+                        let icon = get_process_icon(icon_type);
+                        let container_item = IconMenuItem::with_id(
+                            format!("{}{}", MENU_ID_DOCKER_STOP_PREFIX, container_name),
+                            main_label,
+                            true,
+                            icon,
+                            None,
+                        );
+                        menu.append(&container_item)?;
+                    }
+                } else {
+                    // Multiple containers with same prefix - create submenu
+                    let group_submenu = Submenu::new(prefix.to_uppercase(), true);
 
-                // Create clickable menu item with Docker icon
-                let icon_type = icon_type_for_docker();
-                let icon = get_process_icon(icon_type);
-                let container_item = IconMenuItem::with_id(
-                    format!("{}{}", MENU_ID_DOCKER_STOP_PREFIX, container_name),
-                    main_label,
-                    true,
-                    icon,
-                    None,
-                );
-                menu.append(&container_item)?;
+                    for (container_name, ports) in containers {
+                        let (_prefix, service) = parse_container_prefix(container_name);
+                        let friendly = friendly_container_name(&service);
+                        let ports_str = ports
+                            .iter()
+                            .map(|p| p.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let label = if ports_str.is_empty() {
+                            friendly
+                        } else {
+                            format!("{} · {}", ports_str, friendly)
+                        };
+
+                        let icon_type = icon_type_for_docker();
+                        let icon = get_process_icon(icon_type);
+                        let container_item = IconMenuItem::with_id(
+                            format!("{}{}", MENU_ID_DOCKER_STOP_PREFIX, container_name),
+                            label,
+                            true,
+                            icon,
+                            None,
+                        );
+                        group_submenu.append(&container_item)?;
+                    }
+
+                    menu.append(&group_submenu)?;
+                }
             }
 
             // Stop All only if multiple containers
