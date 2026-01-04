@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::process::Command;
 
 use anyhow::Result;
 use tray_icon::menu::{IconMenuItem, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
@@ -7,6 +8,7 @@ use crate::knowledge::{lookup_display_name, KnowledgeBase, ProcessFingerprint};
 use crate::model::{AppState, FeedbackSeverity, KillFeedback, ProcessInfo};
 use crate::ui::process_icons::{
     get_process_icon, icon_type_for_brew, icon_type_for_docker, icon_type_from_command,
+    ProcessIconType,
 };
 
 const MAX_TOOLTIP_ENTRIES: usize = 5;
@@ -34,6 +36,68 @@ fn parse_container_prefix(name: &str) -> (String, String) {
         // No prefix, use the whole name
         (String::new(), name.to_string())
     }
+}
+
+/// Check if a process is a macOS system process based on its executable path
+fn is_macos_system_process(pid: i32) -> bool {
+    if let Some(path) = get_executable_path(pid) {
+        // Check for system locations
+        path.starts_with("/System/")
+            || path.starts_with("/usr/libexec/")
+            || path.starts_with("/usr/sbin/")
+            || (path.contains(".app/") && path.starts_with("/System/"))
+            // Apple apps in /Applications that are system-level
+            || path.starts_with("/Applications/Utilities/")
+    } else {
+        // Fall back to known system process names
+        false
+    }
+}
+
+/// Get the executable path for a process
+fn get_executable_path(pid: i32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm=", "-ww"])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Known macOS system process names (for when we can't get the path)
+fn is_known_system_process(command: &str) -> bool {
+    matches!(
+        command,
+        "ControlCenter"
+            | "sharingd"
+            | "rapportd"
+            | "airportd"
+            | "WiFiAgent"
+            | "bluetoothd"
+            | "locationd"
+            | "nsurlsessiond"
+            | "trustd"
+            | "UserEventAgent"
+            | "cfprefsd"
+            | "distnoted"
+            | "notifyd"
+            | "configd"
+            | "mDNSResponder"
+            | "SystemUIServer"
+            | "WindowServer"
+            | "loginwindow"
+            | "Finder"
+            | "Dock"
+            | "AirPlayUIAgent"
+            | "AirPlayXPCHelper"
+            | "coreservicesd"
+    )
 }
 
 /// Get display name for a process from knowledge base, or fall back to command
@@ -82,9 +146,10 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
         let item = MenuItem::with_id(MENU_ID_EMPTY, "No dev ports listening", false, None);
         menu.append(&item)?;
     } else {
-        // Separate processes into Docker, Brew, and regular processes
+        // Separate processes into Docker, Brew, macOS System, and regular processes
         let mut docker_items: Vec<(&ProcessInfo, &crate::model::DockerContainerInfo)> = Vec::new();
         let mut brew_items: Vec<(&ProcessInfo, String)> = Vec::new();
+        let mut system_processes: Vec<&ProcessInfo> = Vec::new();
         let mut regular_processes: Vec<&ProcessInfo> = Vec::new();
 
         for process in processes {
@@ -96,6 +161,8 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                 &state.brew_services_map,
             ) {
                 brew_items.push((process, service));
+            } else if is_macos_system_process(process.pid) || is_known_system_process(&process.command) {
+                system_processes.push(process);
             } else {
                 regular_processes.push(process);
             }
@@ -103,7 +170,7 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
 
         let mut has_any_section = false;
 
-        // === PROCESSES SECTION ===
+        // === DEV PROCESSES SECTION ===
         if !regular_processes.is_empty() {
             has_any_section = true;
 
@@ -344,6 +411,60 @@ pub fn build_menu_with_context(state: &AppState) -> Result<Menu> {
                     MenuItem::with_id(MENU_ID_BREW_STOP_ALL, "Stop All Services", true, None);
                 menu.append(&stop_all)?;
             }
+            has_any_section = true;
+        }
+
+        // === MACOS SYSTEM SECTION ===
+        if !system_processes.is_empty() {
+            if has_any_section {
+                menu.append(&PredefinedMenuItem::separator())?;
+            }
+
+            // Group by PID to count unique system processes
+            let mut by_pid: BTreeMap<i32, (String, Vec<u16>)> = BTreeMap::new();
+            for p in &system_processes {
+                let entry = by_pid
+                    .entry(p.pid)
+                    .or_insert_with(|| (p.command.clone(), Vec::new()));
+                if !entry.1.contains(&p.port) {
+                    entry.1.push(p.port);
+                }
+            }
+
+            // Create submenu for system processes
+            let system_submenu = Submenu::new(
+                format!("macOS System · {}", by_pid.len()),
+                true,
+            );
+
+            for (pid, (command, ports)) in &mut by_pid {
+                ports.sort();
+
+                // Try to get display name from knowledge base
+                let display_name = get_process_display_name(command, None, &state.knowledge_base)
+                    .unwrap_or_else(|| command.clone());
+
+                let ports_str = ports
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let main_label = format!("{} · {}", ports_str, display_name);
+
+                // Use Generic icon for system processes (could add Apple icon later)
+                let icon = get_process_icon(ProcessIconType::Generic);
+                let process_item = IconMenuItem::with_id(
+                    MenuId::new(process_menu_id(*pid, ports[0])),
+                    main_label,
+                    true,
+                    icon,
+                    None,
+                );
+                system_submenu.append(&process_item)?;
+            }
+
+            menu.append(&system_submenu)?;
         }
     }
 
